@@ -1,0 +1,101 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum BookingState {
+  INIT
+  QUEUED
+  ADMITTED
+  LOCKED
+  PAYMENT_PENDING
+  CONFIRMED
+  FAILED
+  EXPIRED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum PaymentMethod {
+  UPI
+  NETBANKING
+  CASH
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  phone     String   @unique
+  password  String
+
+  bookings  Booking[]
+  payments  Payment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Slot {
+  id           String   @id @default(uuid())
+  totalSeats   Int
+
+  bookings     Booking[]
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Booking {
+  id              String        @id @default(uuid())
+  state           BookingState
+  idempotencyKey  String       @unique
+
+  slotId          String
+  slot            Slot          @relation(fields: [slotId], references: [id])
+
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+
+  seatNumber      Int?  
+  payment         Payment?
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([slotId, state])
+  @@unique([slotId, seatNumber])
+}
+
+model Payment {
+  id        String        @id @default(uuid())
+  status    PaymentStatus
+  method    PaymentMethod   @default(NETBANKING)
+
+  bookingId String        @unique
+  booking   Booking       @relation(fields: [bookingId], references: [id])
+
+  userId    String
+  user      User          @relation(fields: [userId], references: [id])
+
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+}
+
+model QueueEntry {
+  id        String   @id @default(uuid())
+  userId    String
+  slotId    String
+
+  enteredAt DateTime @default(now())
+  admittedAt DateTime?
+
+  @@index([slotId, enteredAt])
+}
