@@ -1,0 +1,113 @@
+import { PrismaClient, BookingState } from "@prisma/client";
+import { randomUUID } from "node:crypto";
+import bookingQueue from "../queues/booking.queue";
+import { acquireLock, releaseLock } from "../utils/locking.utils";
+import { getIdempotencyKey } from "../utils/keys.utils";
+
+const prisma = new PrismaClient();
+
+export class BookingService {
+  static async getBookingsBySlotId(slotId: string) {
+    return await prisma.booking.findMany({
+      where: { slotId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+  }
+
+  static async getUserBookings(userId: string) {
+    return await prisma.booking.findMany({
+      where: { userId },
+      include: {
+        slot: true,
+        payment: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+  }
+
+  static async createBooking(userId: string, slotId: string) {
+      const slot = await prisma.slot.findUnique({
+        where: { id: slotId },
+      });
+      if (!slot) {
+        throw new Error("Slot not found");
+      }
+
+      const key = getIdempotencyKey(slotId, userId);
+      const newBooking = await prisma.booking.create({
+        data: {
+          state: "INIT",
+          slotId: slotId,
+          userId: userId,
+          idempotencyKey: key as string,
+        },
+      });
+
+      await bookingQueue.add(
+        "booking_queue",
+        {
+          userId: userId,
+          slotId: slot.id,
+          bookingId: newBooking.id,
+          totalSeats: slot.totalSeats
+        },
+        {
+          delay: 2000,
+          backoff: {
+            type: "exponential",
+          },
+        }
+      );
+
+      return newBooking;
+  }
+
+  static async cancelUserBooking(userId: string, bookingId: string) {
+    const booking = await prisma.booking.findUnique({
+      where: { id: bookingId },
+    });
+
+    if (!booking) {
+      throw new Error("Booking not found");
+    }
+
+    if (booking.userId !== userId) {
+      throw new Error("Unauthorized to cancel this booking");
+    }
+
+    return await prisma.booking.update({
+      where: {
+        id: bookingId,
+      },
+      data: {
+        state: "CANCELLED",
+      },
+    });
+  }
+
+  static async getBookingByUserAndSlot(userId: string, slotId: string) {
+    return await prisma.booking.findFirst({
+      where: {
+        userId,
+        slotId,
+      },
+      include: {
+        payment: true,
+        slot: true,
+      },
+    });
+  }
+}
