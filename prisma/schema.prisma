@@ -31,71 +31,81 @@ enum PaymentMethod {
 }
 
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  email     String   @unique
-  phone     String   @unique
-  password  String
+  id       String @id @default(uuid())
+  name     String
+  email    String @unique
+  phone    String @unique
+  password String
 
-  bookings  Booking[]
-  payments  Payment[]
+  bookings Booking[]
+  payments Payment[]
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  queueEntries QueueEntry[]
+}
+
+model Slot {
+  id         String @id @default(uuid())
+  totalSeats Int
+
+  bookings Booking[]
+
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  queueEntries QueueEntry[]
+}
+
+model Booking {
+  id             String       @id @default(uuid())
+  state          BookingState @default(INIT)
+  idempotencyKey String       @unique
+
+  slotId String
+  slot   Slot   @relation(fields: [slotId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  seatNumber Int?
+  payment    Payment?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([slotId, seatNumber])
+  @@index([slotId, state])
+}
+
+model Payment {
+  id     String        @id @default(uuid())
+  amount Int
+  status PaymentStatus @default(PENDING)
+  method PaymentMethod @default(NETBANKING)
+
+  razorpayOrderId   String?
+  razorpayPaymentId String?
+  razorpaySignature String?
+
+  bookingId String  @unique
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
-model Slot {
-  id           String   @id @default(uuid())
-  totalSeats   Int
-
-  bookings     Booking[]
-
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-}
-
-model Booking {
-  id              String        @id @default(uuid())
-  state           BookingState
-  idempotencyKey  String       @unique
-
-  slotId          String
-  slot            Slot          @relation(fields: [slotId], references: [id])
-
-  userId          String
-  user            User          @relation(fields: [userId], references: [id])
-
-  seatNumber      Int?  
-  payment         Payment?
-
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-
-  @@index([slotId, state])
-  @@unique([slotId, seatNumber])
-}
-
-model Payment {
-  id        String        @id @default(uuid())
-  status    PaymentStatus
-  method    PaymentMethod   @default(NETBANKING)
-
-  bookingId String        @unique
-  booking   Booking       @relation(fields: [bookingId], references: [id])
-
-  userId    String
-  user      User          @relation(fields: [userId], references: [id])
-
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-}
-
 model QueueEntry {
-  id        String   @id @default(uuid())
-  userId    String
-  slotId    String
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-  enteredAt DateTime @default(now())
+  slotId String
+  slot   Slot   @relation(fields: [slotId], references: [id])
+
+  enteredAt  DateTime  @default(now())
   admittedAt DateTime?
 
   @@index([slotId, enteredAt])
