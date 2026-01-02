@@ -48,6 +48,7 @@ model User {
 model Slot {
   id         String @id @default(uuid())
   totalSeats Int
+  SeatNumbers  Int[]
 
   bookings Booking[]
 
