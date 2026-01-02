@@ -30,6 +30,11 @@ enum PaymentMethod {
   CASH
 }
 
+enum SeatStatus {
+  AVAILABLE
+  NOT_AVAILABLE
+}
+
 model User {
   id       String @id @default(uuid())
   name     String
@@ -48,13 +53,24 @@ model User {
 model Slot {
   id         String @id @default(uuid())
   totalSeats Int
-  SeatNumbers  Int[]
+  seats      Seat[]
 
   bookings Booking[]
 
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
   queueEntries QueueEntry[]
+}
+
+model Seat {
+  id         String @id @default(uuid())
+  seatNumber Int
+  slotId     String
+  slot       Slot   @relation(fields: [slotId], references: [id])
+
+  bookings Booking[]
+
+  @@unique([slotId, seatNumber])
 }
 
 model Booking {
@@ -68,13 +84,15 @@ model Booking {
   userId String
   user   User   @relation(fields: [userId], references: [id])
 
-  seatNumber Int?
-  payment    Payment?
+  seatId String
+  seat   Seat   @relation(fields: [seatId], references: [id])
+
+  payment   Payment?
+  lockValue String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@unique([slotId, seatNumber])
   @@index([slotId, state])
 }
 
