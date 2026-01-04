@@ -1,5 +1,5 @@
 import { Worker } from "bullmq";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, Seat } from "@prisma/client";
 import { acquireLock, releaseLock } from "../utils/locking.utils";
 import { redisConnection, redisPub } from "../config/redis.config";
 
@@ -9,6 +9,8 @@ export const queueWorker = new Worker(
   "PROCESS_BOOKING",
   async (job) => {
     const { bookingId, userId, slotId } = job.data;
+    let allocatedSeat: Seat | null = null;
+    let lockValue: string | null = null;
 
     try {
       await prisma.booking.update({
@@ -48,8 +50,6 @@ export const queueWorker = new Worker(
         throw new Error("Seats are not found")
       }
 
-      let allocatedSeat = null;
-      let lockValue = null;
       for (const seat of seats) {
         const lock = await acquireLock(slotId, seat.id, bookingId);
         if (lock) {
@@ -68,13 +68,13 @@ export const queueWorker = new Worker(
         },
         data: {
           state: "LOCKED",
-          seatId: allocatedSeat.id,
+          seatId: allocatedSeat?.id as string,
           lockValue
         },
       });
       
       if (updated.count !== 1) {
-        await releaseLock(slotId, allocatedSeat.id, lockValue);
+        await releaseLock(slotId, allocatedSeat?.id as string, lockValue);
         return;
       }
 
@@ -83,7 +83,7 @@ export const queueWorker = new Worker(
         JSON.stringify({
           bookingId,
           state: "LOCKED",
-          seatNumber: allocatedSeat.seatNumber,
+          seatNumber: allocatedSeat?.seatNumber,
           slotId,
         })
       );
@@ -94,7 +94,7 @@ export const queueWorker = new Worker(
       });
     } finally {
       if (lockValue) {
-        await releaseLock(slotId, allocatedSeat.id, lockValue);
+        await releaseLock(slotId, allocatedSeat?.id as string, lockValue);
       }
     }
   },

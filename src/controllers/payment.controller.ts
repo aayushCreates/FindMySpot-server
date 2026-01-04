@@ -93,7 +93,7 @@ export const slotPayments = async (
 export const userPayment = async (req: FastifyRequest, reply: FastifyReply) => {
   try {
     const user = req.user;
-    const payments = await Payment.getUserPayment(user.id);
+    const payments = await Payment.getUserPayment(user?.id as string);
     reply.status(200).send({
       success: true,
       data: payments,

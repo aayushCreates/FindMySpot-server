@@ -1,8 +1,5 @@
 import { randomUUID } from "crypto";
 import { redisConnection } from "../config/redis.config";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
 
 export const acquireLock = async (slotId: string, seatId: string, ttlSeconds = 300) => {
   const key = `lock:${slotId}:${seatId}`;
