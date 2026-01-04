@@ -112,7 +112,6 @@ export const createBooking = async (req: FastifyRequest, reply: FastifyReply) =>
             }
             throw e;
         }
-
     } catch (err) {
         console.log("Error in creating booking", err);
         return reply.status(500).send({
@@ -125,7 +124,8 @@ export const createBooking = async (req: FastifyRequest, reply: FastifyReply) =>
 export const cancelBookingByUser = async (req: FastifyRequest, reply: FastifyReply) => {
     try {
         const userId = req.user?.id;
-        const { id } = req.params as any;   // bookingId
+        const { id } = req.params as any;
+        const { slotId, seatNumber } = req.body as any;
 
         if (!userId) {
             return reply.status(401).send({
@@ -142,7 +142,7 @@ export const cancelBookingByUser = async (req: FastifyRequest, reply: FastifyRep
         }
 
         try {
-            await BookingService.cancelUserBooking(userId, id);
+            await BookingService.cancelUserBooking(userId, id, slotId, seatNumber);
             return reply.status(200).send({
                 success: true,
                 message: "Booking cancelled successfully"

@@ -9,12 +9,12 @@ import {
 } from "../controllers/booking.controller";
 
 
-export default function bookingRoute (fastify: FastifyInstance) {
+export default async function bookingRouter (fastify: FastifyInstance) {
     fastify.get('/slot/:id', { preHandler: isUserLoggedIn } , getSlotAllBookings);
 
     fastify.post('/', { preHandler: isUserLoggedIn }, createBooking);
     
-    fastify.get('/:id/cancel', { preHandler: isUserLoggedIn }, cancelBookingByUser);
+    fastify.post('/:id/cancel', { preHandler: isUserLoggedIn }, cancelBookingByUser);
 
     fastify.get('/my-bookings', { preHandler: isUserLoggedIn } , getUserBookings);
     

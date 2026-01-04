@@ -8,5 +8,13 @@ export const redisConnection = new Redis({
     port: redisPort
 });
 
+export const redisPub = new Redis({
+    host: redisHost,
+    port: redisPort
+});
 
+export const redisSub = new Redis({
+    host: redisHost,
+    port: redisPort
+});
 

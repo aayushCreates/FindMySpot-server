@@ -1,8 +1,7 @@
-import { PrismaClient, BookingState } from "@prisma/client";
-import { randomUUID } from "node:crypto";
+import { PrismaClient } from "@prisma/client";
 import bookingQueue from "../queues/booking.queue";
-import { acquireLock, releaseLock } from "../utils/locking.utils";
 import { getIdempotencyKey } from "../utils/keys.utils";
+import { redisPub } from "../config/redis.config";
 
 const prisma = new PrismaClient();
 
@@ -39,53 +38,87 @@ export class BookingService {
   }
 
   static async createBooking(userId: string, slotId: string) {
-      const slot = await prisma.slot.findUnique({
-        where: { id: slotId },
-      });
-      if (!slot) {
-        throw new Error("Slot not found");
+    const slot = await prisma.slot.findFirst({
+      where: { id: slotId },
+    });
+    if (!slot) {
+      throw new Error("Slot not found");
+    }
+
+    const seat = await prisma.seat.findFirst({
+      where: {
+        slotId: slotId
       }
+    });
+    if(!seat) {
+      throw new Error("Seat not found");
+    }
 
-      const key = getIdempotencyKey(slotId, userId);
-      const newBooking = await prisma.booking.create({
-        data: {
-          state: "INIT",
-          slotId: slotId,
-          userId: userId,
-          idempotencyKey: key as string,
+    const key = getIdempotencyKey(slotId, userId);
+    const newBooking = await prisma.booking.create({
+      data: {
+        state: "INIT",
+        slotId: slotId,
+        userId: userId,
+        idempotencyKey: key as string,
+        seatId: seat.id
+      },
+    });
+
+    await redisPub.publish(
+      `booking:${newBooking.id}`,
+      JSON.stringify({
+        userId: newBooking.userId,
+        bookingId: newBooking.id,
+        state: newBooking.state,
+        slotId: newBooking.slotId,
+        seatId: newBooking.seatId
+      })
+    );
+
+    await bookingQueue.add(
+      "booking_queue",
+      {
+        userId: userId,
+        slotId: slot.id,
+        bookingId: newBooking.id,
+        totalSeats: slot.totalSeats,
+        seatId: newBooking.seatId
+      },
+      {
+        delay: 2000,
+        backoff: {
+          type: "exponential",
         },
-      });
+      }
+    );
 
-      await bookingQueue.add(
-        "booking_queue",
-        {
-          userId: userId,
-          slotId: slot.id,
-          bookingId: newBooking.id,
-          totalSeats: slot.totalSeats
-        },
-        {
-          delay: 2000,
-          backoff: {
-            type: "exponential",
-          },
-        }
-      );
-
-      return newBooking;
+    return newBooking;
   }
 
-  static async cancelUserBooking(userId: string, bookingId: string) {
+  static async cancelUserBooking(userId: string, bookingId: string, slotId: string, seatNumber: number) {
     const booking = await prisma.booking.findUnique({
       where: { id: bookingId },
     });
-
     if (!booking) {
       throw new Error("Booking not found");
     }
 
     if (booking.userId !== userId) {
       throw new Error("Unauthorized to cancel this booking");
+    }
+
+    if (booking.slotId !== slotId) {
+      throw new Error("Booking not found");
+    }
+
+    const slot = await prisma.slot.findUnique({
+      where: {
+        id: slotId
+      }
+    });
+    if (!slot) {
+      throw new Error("Slot not found");
     }
 
     return await prisma.booking.update({

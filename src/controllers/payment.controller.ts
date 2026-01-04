@@ -16,7 +16,12 @@ export const createPayment = async (
       });
     }
 
-    const newPayment = await Payment.createPayment(bookingId, slotId, amount);
+    const newPayment = await Payment.createPayment(
+      bookingId,
+      slotId,
+      amount,
+      user?.id as string
+    );
 
     reply.status(200).send({
       success: true,
@@ -25,7 +30,9 @@ export const createPayment = async (
     });
   } catch (err) {
     console.log("Error in creating payment for slot", err);
-    reply.status(500).send({ success: false, message: "Internal Server Error" });
+    reply
+      .status(500)
+      .send({ success: false, message: "Internal Server Error" });
   }
 };
 
@@ -35,26 +42,32 @@ export const verifyPayment = async (
 ) => {
   try {
     const signature = req.headers["x-razorpay-signature"] as string;
-    const body = req.body as any;
 
     if (!signature) {
-        return reply.status(400).send({ success: false, message: "Missing signature" });
+      return reply
+        .status(400)
+        .send({ success: false, message: "Missing signature" });
     }
 
-    const isValidSignature = verifySignature(body, signature);
+    const isValidSignature = verifySignature(req.body, signature);
     if (!isValidSignature) {
       throw new Error("Invalid signature");
     }
 
-    await Payment.verifyPayment(body, signature);
+    await Payment.verifyPayment(
+      req.body,
+      signature
+    );
 
     reply.status(200).send({
-        success: true,
-        message: "Payment verified successfully"
+      success: true,
+      message: "Payment verified successfully",
     });
   } catch (err) {
     console.log("Error in verifying payment", err);
-    reply.status(500).send({ success: false, message: "Internal Server Error" });
+    reply
+      .status(500)
+      .send({ success: false, message: "Internal Server Error" });
   }
 };
 
@@ -66,12 +79,14 @@ export const slotPayments = async (
     const { slotId } = req.params as any;
     const payments = await Payment.getSlotPayments(slotId);
     reply.status(200).send({
-        success: true,
-        data: payments
+      success: true,
+      data: payments,
     });
   } catch (err) {
     console.log("Error in getting slot payments", err);
-    reply.status(500).send({ success: false, message: "Internal Server Error" });
+    reply
+      .status(500)
+      .send({ success: false, message: "Internal Server Error" });
   }
 };
 
@@ -80,11 +95,13 @@ export const userPayment = async (req: FastifyRequest, reply: FastifyReply) => {
     const user = req.user;
     const payments = await Payment.getUserPayment(user.id);
     reply.status(200).send({
-        success: true,
-        data: payments
+      success: true,
+      data: payments,
     });
   } catch (err) {
     console.log("Error in getting slot payment of user", err);
-    reply.status(500).send({ success: false, message: "Internal Server Error" });
+    reply
+      .status(500)
+      .send({ success: false, message: "Internal Server Error" });
   }
 };
