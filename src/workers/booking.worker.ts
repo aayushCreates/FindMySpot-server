@@ -1,48 +1,92 @@
 import { Worker } from "bullmq";
 import { PrismaClient } from "@prisma/client";
 import { acquireLock, releaseLock } from "../utils/locking.utils";
-import { redisConnection } from "../config/redis.config";
+import { redisConnection, redisPub } from "../config/redis.config";
 
 const prisma = new PrismaClient();
 
-export const queueWoker = new Worker(
+export const queueWorker = new Worker(
   "PROCESS_BOOKING",
   async (job) => {
-    const { bookingId, slotId, totalSeats } = job.data;
-
-    let lockValue: string | null = null;
+    const { bookingId, userId, slotId } = job.data;
 
     try {
       await prisma.booking.update({
-        where: { id: bookingId },
+        where: { id: bookingId, state: "INIT" },
         data: { state: "QUEUED" },
       });
-
-      lockValue = await acquireLock(slotId);
-      if (!lockValue) throw new Error("LOCK_BUSY");
+      await redisPub.publish(
+        `booking:${bookingId}`,
+        JSON.stringify({
+          userId: userId,
+          bookingId: bookingId,
+          state: "QUEUED",
+          slotId: slotId,
+        })
+      );
 
       await prisma.booking.update({
         where: { id: bookingId },
         data: { state: "ADMITTED" },
       });
 
-      const count = await prisma.booking.count({
-        where: {
-          slotId,
-          state: {
-            in: ["LOCKED", "PAYMENT_PENDING", "CONFIRMED"],
-          },
-        },
-      });
+      await redisPub.publish(
+        `booking:${bookingId}`,
+        JSON.stringify({
+          userId: userId,
+          bookingId: bookingId,
+          state: "ADMITTED",
+          slotId: slotId,
+        })
+      );
 
-      if (count >= totalSeats) {
-        throw new Error("SLOT_FULL");
+      const seats = await prisma.seat.findMany({
+        where: { slotId },
+        orderBy: { seatNumber: "asc" },
+      });
+      if(!seats || seats.length === 0) {
+        throw new Error("Seats are not found")
       }
 
-      await prisma.booking.update({
-        where: { id: bookingId },
-        data: { state: "LOCKED" },
+      let allocatedSeat = null;
+      let lockValue = null;
+      for (const seat of seats) {
+        const lock = await acquireLock(slotId, seat.id, bookingId);
+        if (lock) {
+          allocatedSeat = seat;
+          lockValue = lock;
+          break;
+        }
+      }
+
+      if (!lockValue) throw new Error("LOCK_BUSY");
+
+      const updated = await prisma.booking.updateMany({
+        where: {
+          id: bookingId,
+          state: "ADMITTED",
+        },
+        data: {
+          state: "LOCKED",
+          seatId: allocatedSeat.id,
+          lockValue
+        },
       });
+      
+      if (updated.count !== 1) {
+        await releaseLock(slotId, allocatedSeat.id, lockValue);
+        return;
+      }
+
+      await redisPub.publish(
+        `booking:${bookingId}`,
+        JSON.stringify({
+          bookingId,
+          state: "LOCKED",
+          seatNumber: allocatedSeat.seatNumber,
+          slotId,
+        })
+      );
     } catch (err) {
       await prisma.booking.update({
         where: { id: bookingId },
@@ -50,7 +94,7 @@ export const queueWoker = new Worker(
       });
     } finally {
       if (lockValue) {
-        await releaseLock(slotId, lockValue);
+        await releaseLock(slotId, allocatedSeat.id, lockValue);
       }
     }
   },

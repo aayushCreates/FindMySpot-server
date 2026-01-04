@@ -1,8 +1,11 @@
 import { randomUUID } from "crypto";
 import { redisConnection } from "../config/redis.config";
+import { PrismaClient } from "@prisma/client";
 
-export const acquireLock = async (resourceId: string, ttlSeconds = 300) => {
-  const key = `lock:${resourceId}`;
+const prisma = new PrismaClient();
+
+export const acquireLock = async (slotId: string, seatId: string, ttlSeconds = 300) => {
+  const key = `lock:${slotId}:${seatId}`;
   const lockValue = randomUUID();
 
   const acquired = await redisConnection.set(
@@ -16,7 +19,7 @@ export const acquireLock = async (resourceId: string, ttlSeconds = 300) => {
   return acquired ? lockValue : null;
 };
 
-export const releaseLock = async (resourceId: string, lockValue: string) => {
+export const releaseLock = async (slotId: string, seatId: string, lockValue: string) => {
     const luaScript = `
     if redis.call("GET", KEYS[1]) == ARGV[1] then
         return redis.call("DEL", KEYS[1])
@@ -25,6 +28,6 @@ export const releaseLock = async (resourceId: string, lockValue: string) => {
     end
     `
 
-    await redisConnection.eval(luaScript, 1, `lock:${resourceId}`, lockValue);
+    await redisConnection.eval(luaScript, 1, `lock:${slotId}:${seatId}`, lockValue);
 
 };
